@@ -49,6 +49,16 @@ def main():
     # Drop entities that were deemed missing/static
     selected_ids = [sid for sid in selected_ids if sid not in missing]
 
+    # Export the filtered data subset when requested
+    if cfg.get('output', 'export_filtered'):
+        cols = [c for c in df.columns if c[0] in selected_ids]
+        if end == float('inf'):
+            filtered_df = df.loc[start:, cols]
+        else:
+            filtered_df = df.loc[start:end, cols]
+        filtered_df.to_csv(os.path.join(
+            cfg.get('output', 'output_dir'), 'filtered.csv'))
+
     # Optionally export the marker grouping
     if cfg.get('output', 'export_marker_list'):
         os.makedirs(cfg.get('output', 'output_dir'), exist_ok=True)
@@ -115,19 +125,19 @@ def main():
         if cfg.get('output','plots'):
             plot_trajectory_2d(
                 pos, times, tmarkers,
-                os.path.join(out_dir, f"{id_}_traj2d.png")
+                os.path.join(out_dir, f"{id_}_traj2d.svg")
             )
             plot_trajectory_3d(
                 pos, times, tmarkers,
-                os.path.join(out_dir, f"{id_}_traj3d.png")
+                os.path.join(out_dir, f"{id_}_traj3d.svg")
             )
             plot_time_series(
                 speed, t_v, 'Linear Speed', tmarkers,
-                os.path.join(out_dir, f"{id_}_speed.png")
+                os.path.join(out_dir, f"{id_}_speed.svg")
             )
             plot_time_series(
                 ang_spd, t_a, 'Angular Speed', tmarkers,
-                os.path.join(out_dir, f"{id_}_angular.png")
+                os.path.join(out_dir, f"{id_}_angular.svg")
             )
 
 if __name__ == '__main__':

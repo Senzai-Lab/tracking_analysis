@@ -7,9 +7,8 @@ interval:
   end_frame: null
 
 # Extra frame “time markers” (integers) to draw on plots
-time_markers:
-  - 240
-  - 900
+# Use null for no markers
+time_markers: null
 
 # List of IDs (rigid-body base names) to analyze; empty = all
 groups: []

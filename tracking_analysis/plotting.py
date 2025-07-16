@@ -14,6 +14,7 @@ def plot_trajectory_2d(pos, times, time_markers, out_path):
     lc.set_array(times[:-1])
     ax.add_collection(lc)
     ax.autoscale()
+    ax.set_aspect('equal', 'box')
     cbar = fig.colorbar(lc, ax=ax)
     cbar.set_label('Time (s)')
     # Add markers on the trajectory
@@ -35,6 +36,8 @@ def plot_trajectory_3d(pos, times, time_markers, out_path):
     lc.set_array(times[:-1])
     ax.add_collection(lc)
     ax.autoscale()
+    if hasattr(ax, 'set_box_aspect'):
+        ax.set_box_aspect((1, 1, 1))
     cbar = fig.colorbar(lc, ax=ax)
     cbar.set_label('Time (s)')
     for tm in time_markers:
