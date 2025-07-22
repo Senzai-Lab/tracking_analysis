@@ -15,13 +15,9 @@ import plotly.graph_objects as go
 
 from tracking_analysis.config import Config
 
-from interactive_app.utils import (
-    build_table,
-    make_figures,
-    prepare_data,
-    slice_range,
-    build_config_form,
-)
+from interactive_app.data_utils import build_table, prepare_data, slice_range
+from interactive_app.plotting import make_figures
+from interactive_app.ui_components import build_config_form
 
 
 def create_app(cfg: Config) -> Dash:

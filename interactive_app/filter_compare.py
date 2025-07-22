@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Iterable, Dict, Tuple
 
 import numpy as np
-from scipy.signal import butter, filtfilt, savgol_filter, lfilter, firwin
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -17,6 +16,7 @@ from tracking_analysis.config import Config
 from tracking_analysis.reader import load_data, preprocess_csv
 from tracking_analysis.grouping import group_entities
 from tracking_analysis.kinematics import compute_linear_velocity, compute_angular_speed
+from interactive_app.data_utils import apply_filters
 
 
 def _load_signal(cfg: Config) -> Tuple[np.ndarray, np.ndarray, float]:
@@ -105,72 +105,6 @@ def _load_signal(cfg: Config) -> Tuple[np.ndarray, np.ndarray, float]:
     return t, signal, fs
 
 
-def _apply_filters(signal: np.ndarray, fs: float, filters: Iterable[dict]) -> Dict[str, np.ndarray]:
-    """Apply a series of filters to the signal."""
-    results: Dict[str, np.ndarray] = {}
-    for idx, cfg in enumerate(filters):
-        ftype = cfg.get("type")
-        name = cfg.get("name", ftype or f"f{idx}")
-        if not ftype:
-            continue
-        if ftype == "moving_average":
-            window = max(1, int(cfg.get("window", 5)))
-            kernel = np.ones(window) / window
-            filt = np.convolve(signal, kernel, mode="same")
-        elif ftype == "ema":
-            alpha = float(cfg.get("alpha", 0.3))
-            filt = np.empty_like(signal)
-            filt[0] = signal[0]
-            for i in range(1, len(signal)):
-                filt[i] = alpha * signal[i] + (1 - alpha) * filt[i - 1]
-        elif ftype == "butterworth":
-            order = int(cfg.get("order", 3))
-            cutoff_hz = float(cfg.get("cutoff", 1.0))
-            nyq = 0.5 * fs
-            norm_cutoff = min(cutoff_hz / nyq, 0.99)
-            b, a = butter(order, norm_cutoff, btype="low")
-            padlen = 3 * max(len(a), len(b))
-            if len(signal) <= padlen:
-                filt = lfilter(b, a, signal)
-            else:
-                filt = filtfilt(b, a, signal)
-
-        elif ftype == "savgol":
-            window = int(cfg.get("window", 5))
-            if window % 2 == 0:
-                window += 1
-            poly = int(cfg.get("polyorder", 2))
-            filt = savgol_filter(signal, window, poly)
-        elif ftype == "window":
-            window = int(cfg.get("window", 10))
-            if window < 2:
-                window = 2
-            if window % 2 != 0:
-                window += 1
-            half = window // 2
-            padded = np.pad(signal, (half, half), mode="edge")
-            filt = np.empty_like(signal, dtype=float)
-            for i in range(len(signal)):
-                seg = padded[i : i + window]
-                m1 = np.mean(seg[:half])
-                m2 = np.mean(seg[half:])
-                filt[i] = (m1 + m2) / 2
-        elif ftype == "decimal_removal":
-            digits = int(cfg.get("digits", 1))
-            digits = max(0, digits)
-            factor = 10 ** digits
-            scaled = signal / 180.0
-            scaled = np.trunc(scaled * factor) / factor
-            filt = scaled * 180.0
-        elif ftype == "fir":
-            taps = int(cfg.get("numtaps", 21))
-            cutoff_hz = float(cfg.get("cutoff", 1.0))
-            nyq = 0.5 * fs
-            filt = lfilter(firwin(taps, cutoff_hz / nyq), [1.0], signal)
-        else:
-            continue
-        results[name] = filt
-    return results
 
 
 def main() -> None:
@@ -183,10 +117,10 @@ def main() -> None:
         print("filter_test.enable is not set")
         return
 
-    t, base, fs = _load_signal(cfg)
+    t, base, _ = _load_signal(cfg)
 
     filters = cfg.get("filter_test", "filters", default=[]) or []
-    results = _apply_filters(base, fs, filters)
+    results = apply_filters(base, t, filters)
 
 
     out_dir = cfg.get("output", "output_dir")
