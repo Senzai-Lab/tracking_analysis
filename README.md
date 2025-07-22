@@ -52,6 +52,17 @@ You can also run the trimming step manually:
 python -m tracking_analysis.trim <input.csv> [output.csv] --summary summary.txt
 ```
 
+## Code Structure
+
+The `interactive_app` package is split into small modules so UI logic, data
+handling and plotting remain independent:
+
+- `data_utils.py` contains data loading, preprocessing and filtering helpers.
+- `plotting.py` defines the functions that build Plotly figures.
+- `ui_components.py` holds the Dash form builders used in the configuration
+  panel.
+- `utils.py` re-exports these helpers for backward compatibility.
+
 ## Interactive Web Application
 
 The Dash-based web interface mirrors the CLI processing pipeline. It reads

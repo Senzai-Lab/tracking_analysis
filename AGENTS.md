@@ -11,3 +11,8 @@ This repository contains utilities for analyzing tracking CSV files.
 
 * IGNORE output1.csv if exists. That's a internal testing file shouldn't be uploaded.
 * Do not modify the `tracking_analysis` package; make changes only within `interactive_app`.
+* The web application code is split into small modules:
+  * `data_utils.py` handles data loading and filtering
+  * `plotting.py` contains Plotly figure builders
+  * `ui_components.py` creates Dash form elements
+  * `utils.py` re-exports these helpers for backward compatibility
