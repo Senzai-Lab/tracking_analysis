@@ -65,6 +65,7 @@ def window_avg(data: np.ndarray, window: int = 4) -> np.ndarray:
     return out
 
 
+
 @register("lateral_inhibition")
 def lateral_inhibition(
     data: np.ndarray,

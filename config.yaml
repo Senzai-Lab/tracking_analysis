@@ -20,7 +20,7 @@ time_markers:
 groups: [H1]
 
 # Kinematics (smoothing) options
-# savgol / window
+# Available methods: savgol / ema / window / lateral_inhibition
 
 kinematics:
   smoothing: false
@@ -36,6 +36,13 @@ filtering:
   speed_upper: null
   angular_speed_lower: 0.001
   angular_speed_upper: 50
+
+  # apply the no-moving filter when true
+  no_moving_enable: false
+  # remove stretches where speed stays zero for at least this many frames
+  no_moving_window: 10
+  # additionally drop this many frames after each no-movement period
+  no_moving_after: 10
 
   x_lower: null
   x_upper: null
@@ -99,13 +106,8 @@ filter_test:
     - type: savgol
       window: 7
       polyorder: 2
-    - type: fir
-      numtaps: 21
-      cutoff: 2.0
     - type: window
       window: 10
-    - type: decimal_removal
-      digits: 2
     - type: lateral_inhibition
       tau_fast: 5
       tau_slow: 30

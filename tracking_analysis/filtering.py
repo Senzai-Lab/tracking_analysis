@@ -210,3 +210,137 @@ def merge_ranges(ranges):
         else:
             merged.append([a, b])
     return [(int(a), int(b)) for a, b in merged]
+
+
+def filter_no_moving(speed, start_frame, window=10, after=10):
+    """Filter sequences of zero ``speed`` lasting ``window`` frames.
+
+    Parameters
+    ----------
+    speed : array_like
+        Speed values for consecutive frames.
+    start_frame : int
+        Frame index corresponding to ``speed[0]``.
+    window : int, optional
+        Minimum length of a zero-velocity block to remove.
+    after : int, optional
+        Number of additional frames to remove after a block.
+
+    Returns
+    -------
+    filtered : ndarray
+        ``speed`` with zero-velocity blocks replaced by ``NaN``.
+    ranges : list of tuple
+        ``(start_frame, end_frame)`` ranges of removed sections.
+    """
+
+    arr = np.asarray(speed, dtype=float)
+    filtered = arr.copy()
+    ranges = []
+    n = len(arr)
+    i = 0
+    while i < n:
+        if arr[i] != 0:
+            i += 1
+            continue
+        j = i
+        while j < n and arr[j] == 0:
+            j += 1
+        if j - i >= window:
+            end = min(n, j + after)
+            filtered[i:end] = np.nan
+            ranges.append((int(start_frame + i), int(start_frame + end)))
+        i = j
+
+    return filtered, ranges
+
+
+def _lateral_inhibition(data, tau_fast=2, tau_slow=8, k_inhibit=1.0):
+    """Causal difference-of-exponentials filter used by ``apply_filter_chain``."""
+    alpha_fast = 1.0 / float(tau_fast)
+    alpha_slow = 1.0 / float(tau_slow)
+
+    ema_fast = np.empty_like(data, dtype=float)
+    ema_slow = np.empty_like(data, dtype=float)
+    ema_fast[0] = data[0]
+    ema_slow[0] = data[0]
+    for k in range(1, len(data)):
+        ema_fast[k] = ema_fast[k - 1] + alpha_fast * (data[k] - ema_fast[k - 1])
+        ema_slow[k] = ema_slow[k - 1] + alpha_slow * (data[k] - ema_slow[k - 1])
+
+    return ema_fast - k_inhibit * ema_slow
+
+
+def apply_filter_chain(x, times, filters):
+    """Apply a sequence of filters to ``x``.
+
+    This is shared by the interactive application and comparison tool.
+    Supported filter types are ``moving_average``, ``ema``, ``butterworth``,
+    ``savgol``, ``window`` and ``lateral_inhibition``.
+    """
+
+    if not filters or len(x) == 0:
+        return {}
+
+    fs = 1.0 / float(np.mean(np.diff(times))) if len(times) > 1 else 1.0
+    results = {}
+    for idx, cfg in enumerate(filters):
+        ftype = cfg.get("type")
+        if not ftype:
+            continue
+        name = cfg.get("name", ftype or f"f{idx}")
+        y = x
+        if ftype == "moving_average":
+            window = max(1, int(cfg.get("window", 5)))
+            kernel = np.ones(window) / window
+            y = np.convolve(x, kernel, mode="same")
+        elif ftype == "ema":
+            alpha = float(cfg.get("alpha", 0.3))
+            y = np.empty_like(x)
+            y[0] = x[0]
+            for i in range(1, len(x)):
+                y[i] = alpha * x[i] + (1 - alpha) * y[i - 1]
+        elif ftype == "butterworth":
+            from scipy.signal import butter, filtfilt, lfilter
+
+            order = int(cfg.get("order", 3))
+            cutoff_hz = float(cfg.get("cutoff", 1.0))
+            nyq = 0.5 * fs
+            norm_cutoff = min(cutoff_hz / nyq, 0.99)
+            b, a = butter(order, norm_cutoff, btype="low")
+            padlen = 3 * max(len(a), len(b))
+            y = filtfilt(b, a, x) if len(x) > padlen else lfilter(b, a, x)
+        elif ftype == "savgol":
+            from scipy.signal import savgol_filter
+
+            window = int(cfg.get("window", 5))
+            if window % 2 == 0:
+                window += 1
+            poly = int(cfg.get("polyorder", 2))
+            y = savgol_filter(x, window, poly)
+        elif ftype == "window":
+            window = int(cfg.get("window", 10))
+            if window < 2:
+                window = 2
+            if window % 2 != 0:
+                window += 1
+            half = window // 2
+            padded = np.pad(x, (half, half), mode="edge")
+            y = np.empty_like(x, dtype=float)
+            for i in range(len(x)):
+                seg = padded[i : i + window]
+                m1 = np.mean(seg[:half])
+                m2 = np.mean(seg[half:])
+                y[i] = (m1 + m2) / 2
+        elif ftype == "lateral_inhibition":
+            tau_fast = int(cfg.get("tau_fast", 2))
+            tau_slow = int(cfg.get("tau_slow", 8))
+            k_inhibit = float(cfg.get("k_inhibit", 1.0))
+            y = _lateral_inhibition(x, tau_fast=tau_fast, tau_slow=tau_slow, k_inhibit=k_inhibit)
+        else:
+            continue
+
+        results[name] = y
+
+    return results
+

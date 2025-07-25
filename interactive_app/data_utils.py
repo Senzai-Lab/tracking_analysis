@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Tuple
 
-from interactive_app import smoothing
-
 import numpy as np
 import pandas as pd
 
@@ -17,6 +15,8 @@ from tracking_analysis.filtering import (
     filter_anomalies,
     filter_position,
     apply_ranges,
+    apply_filter_chain,
+    filter_no_moving,
 )
 from interactive_app.kinematics import (
     compute_linear_velocity,
@@ -26,102 +26,9 @@ from interactive_app.kinematics import (
 
 
 def apply_filters(x: np.ndarray, times: np.ndarray, filters: List[dict]) -> Dict[str, np.ndarray]:
-    """Apply a sequence of filters to ``x``.
+    """Wrapper around :func:`tracking_analysis.filtering.apply_filter_chain`."""
 
-    Parameters
-    ----------
-    x:
-        Input signal array.
-    times:
-        Time stamps corresponding to ``x``.
-    filters:
-        Iterable of filter configuration dictionaries.
-
-    Returns
-    -------
-    dict
-        Mapping of filter name to filtered output array.
-    """
-    if not filters or len(x) == 0:
-        return {}
-
-    fs = 1.0 / float(np.mean(np.diff(times))) if len(times) > 1 else 1.0
-    results: Dict[str, np.ndarray] = {}
-    for idx, cfg in enumerate(filters):
-        ftype = cfg.get("type")
-        if not ftype:
-            continue
-        name = cfg.get("name", ftype or f"f{idx}")
-        y = x
-        if ftype == "moving_average":
-            window = max(1, int(cfg.get("window", 5)))
-            kernel = np.ones(window) / window
-            y = np.convolve(x, kernel, mode="same")
-        elif ftype == "ema":
-            alpha = float(cfg.get("alpha", 0.3))
-            y = np.empty_like(x)
-            y[0] = x[0]
-            for i in range(1, len(x)):
-                y[i] = alpha * x[i] + (1 - alpha) * y[i - 1]
-        elif ftype == "butterworth":
-            from scipy.signal import butter, filtfilt, lfilter
-
-            order = int(cfg.get("order", 3))
-            cutoff_hz = float(cfg.get("cutoff", 1.0))
-            nyq = 0.5 * fs
-            norm_cutoff = min(cutoff_hz / nyq, 0.99)
-            b, a = butter(order, norm_cutoff, btype="low")
-            padlen = 3 * max(len(a), len(b))
-            y = filtfilt(b, a, x) if len(x) > padlen else lfilter(b, a, x)
-        elif ftype == "savgol":
-            from scipy.signal import savgol_filter
-
-            window = int(cfg.get("window", 5))
-            if window % 2 == 0:
-                window += 1
-            poly = int(cfg.get("polyorder", 2))
-            y = savgol_filter(x, window, poly)
-        elif ftype == "window":
-            window = int(cfg.get("window", 10))
-            if window < 2:
-                window = 2
-            if window % 2 != 0:
-                window += 1
-            half = window // 2
-            padded = np.pad(x, (half, half), mode="edge")
-            y = np.empty_like(x, dtype=float)
-            for i in range(len(x)):
-                seg = padded[i:i + window]
-                m1 = np.mean(seg[:half])
-                m2 = np.mean(seg[half:])
-                y[i] = (m1 + m2) / 2
-        elif ftype == "decimal_removal":
-            digits = int(cfg.get("digits", 1))
-            digits = max(0, digits)
-            factor = 10 ** digits
-            scaled = x / 180.0
-            scaled = np.trunc(scaled * factor) / factor
-            y = scaled * 180.0
-        elif ftype == "fir":
-            from scipy.signal import firwin, lfilter
-
-            taps = int(cfg.get("numtaps", 21))
-            cutoff_hz = float(cfg.get("cutoff", 1.0))
-            nyq = 0.5 * fs
-            y = lfilter(firwin(taps, cutoff_hz / nyq), [1.0], x)
-        elif ftype == "lateral_inhibition":
-            tau_fast = int(cfg.get("tau_fast", 2))
-            tau_slow = int(cfg.get("tau_slow", 8))
-            k_inhibit = float(cfg.get("k_inhibit", 1.0))
-            y = smoothing.lateral_inhibition(
-                x, tau_fast=tau_fast, tau_slow=tau_slow, k_inhibit=k_inhibit
-            )
-        else:
-            continue
-
-        results[name] = y
-
-    return results
+    return apply_filter_chain(x, times, filters)
 
 
 def slice_range(times: np.ndarray, start: float, end: float) -> slice:
@@ -234,6 +141,7 @@ def prepare_data(cfg: Config) -> Tuple[Dict[str, dict], List[str]]:
             polyorder=polyorder,
             method=method,
         )
+        speed_raw = speed.copy()
 
         if rot is not None:
             ang_speed, t_as = compute_angular_speed(
@@ -292,6 +200,17 @@ def prepare_data(cfg: Config) -> Tuple[Dict[str, dict], List[str]]:
 
             ang_speed = apply_ranges(ang_speed, start_frames, speed_ranges)
             speed = apply_ranges(speed, start_frames, ang_ranges)
+
+            if filt_cfg.get("no_moving_enable"):
+                nm_window = int(filt_cfg.get("no_moving_window", 10))
+                nm_after = int(filt_cfg.get("no_moving_after", 10))
+                _, nm_ranges = filter_no_moving(
+                    speed_raw, start_frames, window=nm_window, after=nm_after
+                )
+                if nm_ranges:
+                    speed = apply_ranges(speed, start_frames, nm_ranges)
+                    ang_speed = apply_ranges(ang_speed, start_frames, nm_ranges)
+                    pos = apply_ranges(pos, start, [(s - 1, e) for s, e in nm_ranges])
 
             if pos_ranges:
                 rng_conv = [(max(start_frames, s), e + 1) for s, e in pos_ranges]

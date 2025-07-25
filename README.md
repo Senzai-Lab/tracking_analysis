@@ -39,6 +39,9 @@ Options for smoothing the computed velocities (`smoothing`, `smoothing_window`, 
 
 ### `filtering`
 Enable range filtering and define upper/lower thresholds for linear speed, angular speed and X/Y/Z coordinates.
+The `no_moving_enable` flag toggles removal of stationary segments. When enabled,
+`no_moving_window` sets the minimum length of a zero-speed block to discard and
+`no_moving_after` specifies how many frames after the block are also dropped.
 
 ### `output`
 Controls which figures and exports are produced. `full_size_plots` enlarges plots to 16x10 inches. `x_limit` and `y_limit` specify the axis maxima for time-series plots (set to `null` for automatic scaling).
@@ -121,14 +124,10 @@ filter_test:
       window: 5
     - type: window
       window: 10
-    - type: decimal_removal
-      digits: 1
 ```
 
 The `window` filter averages the first and last half of the
-configured window. The `decimal_removal` filter truncates the
-signal after scaling it to the -1..1 range before converting back to
-degrees.
+configured window.
 
 Run the tool with:
 
